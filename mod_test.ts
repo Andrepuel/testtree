@@ -1,5 +1,5 @@
-import {suite} from './mod.ts';
-import {assertEquals} from 'https://deno.land/std/testing/asserts.ts';
+import {suite, Suite} from './mod.ts';
+import {assert, assertEquals} from 'https://deno.land/std/testing/asserts.ts';
 
 let globalCounter = 0;
 
@@ -50,3 +50,57 @@ await suite('with async', async (t) => {
 Deno.test('with async finally', () => {
     assertEquals(globalCounter, 8);
 });
+
+let failureCounts = 0;
+suite('accidental access of "locked" suite is disallowed', (outer) => {
+    let innerOnOuter: Suite;
+    outer.suite('inside', (inner) => {
+        innerOnOuter = inner;
+        try {
+            outer.test('should fail', () => {
+                assert(false, 'should not be able to register test using outer');
+            });
+        } catch(e) {
+            Deno.test('registration of test using outer suite failed: ' + e.message, () => {
+                failureCounts++;
+            });
+        }
+
+        try {
+            outer.suite('should fail', () => {
+                Deno.test('should fail', () => {
+                    assert(false, 'should not be able to register suite using outer')
+                })
+            });
+        } catch(e) {
+            Deno.test('registration of suite using outer suite failed: ' + e.message, () => {
+                failureCounts++;
+            })
+        }
+    });
+
+    try {
+        innerOnOuter!.test('should fail', () => {
+            assert(false, 'should not be able to register test using ended suite');
+        });
+    } catch(e) {
+        Deno.test('registration of test using ended suite failed: ' + e.message, () => {
+            failureCounts++;
+        });
+    }
+
+    try {
+        innerOnOuter!.suite('should fail', () => {
+            Deno.test('should fail', () => {
+                assert(false, 'should not be able to register suite using ended suite')
+            })
+        });
+    } catch(e) {
+        Deno.test('registration of suite using ended suite failed: ' + e.message, () => {
+            failureCounts++;
+        })
+    }
+});
+Deno.test('accidental access of "locked" suite is disallowed finally', () => {
+    assertEquals(failureCounts, 4);
+})

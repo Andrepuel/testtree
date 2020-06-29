@@ -22,6 +22,21 @@ export function suite(name: string, cb: SuiteBody): Promise<void>|void {
     return namer(suite);
 }
 
+function promisifyFinally(cb: () => Promise<void>|void, finall: () => void): Promise<void>|void {
+    try {
+        const x = cb();
+        if (x instanceof Promise) {
+            x.finally(finall);
+        } else {
+            finall();
+        }
+        return x;
+    } catch(e) {
+        finall();
+        throw e;
+    }
+}
+
 export interface Suite {
     test(name: string, cb: AsyncTestBody): Promise<void>|void;
     test(name: string, cb: SyncTestBody): void;
@@ -32,14 +47,20 @@ export interface Suite {
     later<T>(cb: () => Promise<T>): Promise<T>|T;
 }
 
+export class SuiteLockedError extends Error {
+    constructor(public readonly suiteName: string, public readonly elementName: string) {
+        super(`Tried to register ${JSON.stringify(elementName)} on locked suite ${JSON.stringify(suiteName)}`);
+    }
+}
 class SuiteRegister implements Suite {
     private id: number = 0;
-    private eof: boolean = false;
+    private locked: boolean = false;
 
     constructor(private name: string, private idPrefix: number[], private cb: (t: Suite) => void) {
     }
 
     test(name: string, _: TestBody): Promise<void>|void {
+        this.checkLock(name);
         const testName = joinName(this.name, name);
         const thisId = this.idPrefix.concat([this.id++]);
         Deno.test(testName, () => {
@@ -49,14 +70,35 @@ class SuiteRegister implements Suite {
     }
 
     suite(name: string, cb: SuiteBody): Promise<void>|void {
+        this.checkLock(name);
         const thisId = this.idPrefix.concat([this.id++]);
         const testName = joinName(this.name, name);
         const suite = new SuiteRegister(testName, thisId, this.cb);
-        return cb(suite);
+
+        this.lock();
+        return promisifyFinally(
+            () => cb(suite),
+            () => {
+                this.unlock();
+                suite.lock();
+            }
+        );
     }
 
     later<T>(cb: () => Promise<T>): T {
         return null as any;
+    }
+
+    lock() {
+        this.locked = true;
+    }
+
+    unlock() {
+        this.locked = false;
+    }
+
+    checkLock(name: string) {
+        if (this.locked) throw new SuiteLockedError(this.name, name);
     }
 }
 
