@@ -44,7 +44,9 @@ export interface Suite {
     suite(name: string, cb: AsyncSuiteBody): Promise<void>|void;
     suite(name: string, cb: SyncSuiteBody): void;
     suite(name: string, cb: SuiteBody): Promise<void>|void;
-    later<T>(cb: () => Promise<T>): Promise<T>|T;
+    later<T>(cb: () => Promise<T>): Promise<T>;
+    later<T>(cb: () => T): T;
+    later<T>(cb: () => Promise<T>|T): Promise<T>|T;
 }
 
 export class SuiteLockedError extends Error {
@@ -86,7 +88,7 @@ class SuiteRegister implements Suite {
     }
 
     later<T>(cb: () => Promise<T>): T {
-        return null as any;
+        return {} as any;
     }
 
     lock() {

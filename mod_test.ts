@@ -104,3 +104,15 @@ suite('accidental access of "locked" suite is disallowed', (outer) => {
 Deno.test('accidental access of "locked" suite is disallowed finally', () => {
     assertEquals(failureCounts, 4);
 })
+
+suite('later returns an empty struct', (ctx) => {
+    const {a, b} = ctx.later(() => ({
+        a: 1,
+        b: 2,
+    }));
+
+    ctx.test('and a concrete struct upon testing', () => {
+        assertEquals(a, 1);
+        assertEquals(b, 2);
+    });
+});
