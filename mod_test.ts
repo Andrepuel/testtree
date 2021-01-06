@@ -1,5 +1,5 @@
 import {suite, Suite} from './mod.ts';
-import {assert, assertEquals} from 'https://deno.land/std/testing/asserts.ts';
+import {assert, assertEquals, assertStrictEq} from 'https://deno.land/std/testing/asserts.ts';
 
 let globalCounter = 0;
 
@@ -114,5 +114,15 @@ suite('later returns an empty struct', (ctx) => {
     ctx.test('and a concrete struct upon testing', () => {
         assertEquals(a, 1);
         assertEquals(b, 2);
+    });
+});
+
+suite<{oi: number}>('suite might be parametrized', (ctx, input) => {
+    ctx.test("value received by suited will be equals defined on test", () => {
+        assertEquals(input.oi, 3);
+    }, {oi: 3})
+
+    ctx.test("on absence of value, an empty struct is used", () => {
+        assertStrictEq(input.oi, undefined);
     });
 });

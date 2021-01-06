@@ -1,8 +1,9 @@
 import {assertEquals, equal} from 'https://deno.land/std/testing/asserts.ts';
 
-type AsyncSuiteBody = (test: Suite) => Promise<void>;
-type SyncSuiteBody = (test: Suite) => void;
-type SuiteBody = AsyncSuiteBody | SyncSuiteBody;
+type EmptyStruct = Record<string, undefined>
+type AsyncSuiteBody<U> = (test: Suite<U>, input: U|EmptyStruct) => Promise<void>;
+type SyncSuiteBody<U> = (test: Suite<U>, input: U|EmptyStruct) => void;
+type SuiteBody<U> = AsyncSuiteBody<U> | SyncSuiteBody<U>;
 type AsyncTestBody = () => Promise<void>;
 type SyncTestBody = () => void;
 type TestBody = AsyncTestBody | SyncTestBody;
@@ -11,13 +12,13 @@ function joinName(a: string, b?: string) {
     return [a, b].filter((x) => x).join(' ');
 }
 
-export function suite(name: string, cb: AsyncSuiteBody): Promise<void>;
-export function suite(name: string, cb: SyncSuiteBody): void;
-export function suite(name: string, cb: SuiteBody): Promise<void>|void {
-    const namer = (t: Suite) => {
+export function suite<U=EmptyStruct>(name: string, cb: AsyncSuiteBody<U>): Promise<void>;
+export function suite<U=EmptyStruct>(name: string, cb: SyncSuiteBody<U>): void;
+export function suite<U=EmptyStruct>(name: string, cb: SuiteBody<U>): Promise<void>|void {
+    const namer = (t: Suite<U>) => {
         return t.suite(`${name}:`, cb);
     }
-    const suite = new SuiteRegister('', [], namer);
+    const suite = new SuiteRegister<U>('', [], namer);
 
     return namer(suite);
 }
@@ -37,13 +38,13 @@ function promisifyFinally(cb: () => Promise<void>|void, finall: () => void): Pro
     }
 }
 
-export interface Suite {
-    test(name: string, cb: AsyncTestBody): Promise<void>|void;
-    test(name: string, cb: SyncTestBody): void;
-    test(name: string, cb: TestBody): Promise<void>|void;
-    suite(name: string, cb: AsyncSuiteBody): Promise<void>|void;
-    suite(name: string, cb: SyncSuiteBody): void;
-    suite(name: string, cb: SuiteBody): Promise<void>|void;
+export interface Suite<U=EmptyStruct> {
+    test(name: string, cb: AsyncTestBody, input?: U): Promise<void>|void;
+    test(name: string, cb: SyncTestBody, input?: U): void;
+    test(name: string, cb: TestBody, input?: U): Promise<void>|void;
+    suite(name: string, cb: AsyncSuiteBody<U>): Promise<void>|void;
+    suite(name: string, cb: SyncSuiteBody<U>): void;
+    suite(name: string, cb: SuiteBody<U>): Promise<void>|void;
     later<T>(cb: () => Promise<T>): Promise<T>;
     later<T>(cb: () => T): T;
     later<T>(cb: () => Promise<T>|T): Promise<T>|T;
@@ -54,24 +55,25 @@ export class SuiteLockedError extends Error {
         super(`Tried to register ${JSON.stringify(elementName)} on locked suite ${JSON.stringify(suiteName)}`);
     }
 }
-class SuiteRegister implements Suite {
+class SuiteRegister<U> implements Suite<U> {
     private id: number = 0;
     private locked: boolean = false;
 
-    constructor(private name: string, private idPrefix: number[], private cb: (t: Suite) => void) {
+    constructor(private name: string, private idPrefix: number[], private cb: (t: Suite<U>, input: U|EmptyStruct) => void) {
     }
 
-    test(name: string, _: TestBody): Promise<void>|void {
+    test(name: string, _: TestBody, inputArg?: U): Promise<void>|void {
+        const input = inputArg ? inputArg : {};
         this.checkLock(name);
         const testName = joinName(this.name, name);
         const thisId = this.idPrefix.concat([this.id++]);
         Deno.test(testName, () => {
-            const runner = new SuiteRunner('', [], testName, thisId);
-            return this.cb(runner);
+            const runner = new SuiteRunner<U>('', [], testName, thisId, input);
+            return this.cb(runner, input);
         });
     }
 
-    suite(name: string, cb: SuiteBody): Promise<void>|void {
+    suite(name: string, cb: SuiteBody<U>): Promise<void>|void {
         this.checkLock(name);
         const thisId = this.idPrefix.concat([this.id++]);
         const testName = joinName(this.name, name);
@@ -79,7 +81,7 @@ class SuiteRegister implements Suite {
 
         this.lock();
         return promisifyFinally(
-            () => cb(suite),
+            () => cb(suite, {} as any),
             () => {
                 this.unlock();
                 suite.lock();
@@ -104,10 +106,10 @@ class SuiteRegister implements Suite {
     }
 }
 
-class SuiteRunner implements Suite {
+class SuiteRunner<U> implements Suite<U> {
     private id: number = 0;
 
-    constructor(private name: string, private idPrefix: number[], private filterName: string, private filterId: number[]) {
+    constructor(private name: string, private idPrefix: number[], private filterName: string, private filterId: number[], private input: U | EmptyStruct) {
     }
 
     test(name: string, cb: TestBody): Promise<void>|void {
@@ -119,11 +121,11 @@ class SuiteRunner implements Suite {
         }
     }
 
-    suite(name: string, cb: SuiteBody): Promise<void>|void {
+    suite(name: string, cb: SuiteBody<U>): Promise<void>|void {
         const thisId = this.idPrefix.concat([this.id++]);
         const testName = joinName(this.name, name);
         if (equal(thisId, this.filterId.slice(0, thisId.length))) {
-            return cb(new SuiteRunner(testName, thisId, this.filterName, this.filterId));
+            return cb(new SuiteRunner(testName, thisId, this.filterName, this.filterId, this.input), this.input);
         }
     }
 
