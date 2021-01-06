@@ -126,3 +126,11 @@ suite<{oi: number}>('suite might be parametrized', (ctx, input) => {
         assertStrictEq(input.oi, undefined);
     });
 });
+
+suite('destructuring', ({suite}) => {
+    suite('is', ({test}) => {
+        test('possible', () => {
+            assert(true);
+        });
+    })
+});

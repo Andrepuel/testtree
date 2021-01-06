@@ -50,6 +50,14 @@ export interface Suite<U=EmptyStruct> {
     later<T>(cb: () => Promise<T>|T): Promise<T>|T;
 }
 
+function bind<U>(suite: Suite<U>): Suite<U> {
+    return {
+        later: suite.later.bind(suite),
+        test: suite.test.bind(suite),
+        suite: suite.suite.bind(suite),
+    }
+}
+
 export class SuiteLockedError extends Error {
     constructor(public readonly suiteName: string, public readonly elementName: string) {
         super(`Tried to register ${JSON.stringify(elementName)} on locked suite ${JSON.stringify(suiteName)}`);
@@ -81,7 +89,7 @@ class SuiteRegister<U> implements Suite<U> {
 
         this.lock();
         return promisifyFinally(
-            () => cb(suite, {} as any),
+            () => cb(bind(suite), {} as any),
             () => {
                 this.unlock();
                 suite.lock();
@@ -125,7 +133,8 @@ class SuiteRunner<U> implements Suite<U> {
         const thisId = this.idPrefix.concat([this.id++]);
         const testName = joinName(this.name, name);
         if (equal(thisId, this.filterId.slice(0, thisId.length))) {
-            return cb(new SuiteRunner(testName, thisId, this.filterName, this.filterId, this.input), this.input);
+            const suite = bind(new SuiteRunner(testName, thisId, this.filterName, this.filterId, this.input));
+            return cb(suite, this.input);
         }
     }
 
